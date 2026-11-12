@@ -1,0 +1,69 @@
+---
+title: "Satellite Data Analysis of Winter Storm Impacts on the Texas Power Grid"
+subtitle: "EDS223 HW4"
+author: "Sophia Soriano"
+date: today
+format: pdf
+---
+
+## Setup
+
+To complete complete the tasks of this assignment, you will need to break your analysis into the following key steps:
+
+1. find locations that experienced a blackout by creating a mask
+2. exclude highways from analysis
+3. identify homes that experienced blackouts by combining the locations of homes and blackouts
+4. Below is guidance and suggestions for each of these steps.
+
+Tip: For improved computational efficiency and easier interoperability with sf, I recommend using the stars package for raster handling.
+
+Tip: Make sure to check that these datasets have the same coordinate reference systems! If not, transform them to match.
+
+## Data Merging
+
+As mentioned above, Houston lies on the border of two tiles. You will need to combine these two tiles together to get one raster for each date (2021-02-07 and 2021-02-16). You can merge rasters using the method discussed in Lab 4, or, if you plan to use the stars package, you can combine them using st_mosaic.
+
+## Create blackout mask
+
+To identify places that experienced a blackout, you should create a “mask” that indicates for each cell whether or not it experienced a blackout.
+
+- find the change in night lights intensity (presumably) caused by the storm
+    - hint: this will require creating a raster object for each day (2021-02-07 and 2021-02-16)
+- reclassify the difference raster, assuming that any location that experienced a drop of more than 200 nW cm-2sr-1 experienced a blackout
+- assign NA to all locations that experienced a drop of less than 200 nW cm-2sr-1 change
+- vectorize the blackout mask
+    - hint: use st_as_sf() to convert from a raster to a vector and fix any invalid geometries with st_make_valid()
+- crop (spatially subset) the blackout mask to the Houston area as defined by the following coordinates:
+    - (-96.5, 29), (-96.5, 30.5), (-94.5, 30.5), (-94.5, 29)
+- re-project the cropped blackout dataset to EPSG:3083 (NAD83 / Texas Centric Albers Equal Area)
+
+## Exclude highways from the cropped blackout mask
+
+Highways may have experienced changes in their night light intensities that are unrelated to the storm. Therefore, you should excluded any locations within 200 meters of all highways in the Houston area.
+
+- identify areas within 200m of all highways
+    - hint: you may need to use st_union
+- find areas that experienced blackouts that are further than 200m from a highway
+
+Tip: The roads geopackage includes data on roads other than highways. However, we can avoid reading in data we don’t need by taking advantage of st_read’s ability to subset using a SQL query. Below is a SQL query that can be used as an argument in st_read:
+`"SELECT * FROM gis_osm_roads_free_1 WHERE fclass='motorway'"`
+
+## Identify the number of homes likely impacted by blackouts
+
+- identify homes that overlap with areas that experienced blackouts
+
+Tip: The buildings geopackage includes data on many types of buildings. As with the roads data, we can avoid reading in data we don’t need. Below is a SQL query that can be used as an argument in st_read:
+`"SELECT *
+FROM gis_osm_buildings_a_free_1`
+WHERE (type IS NULL AND name IS NULL)`
+OR type in ('residential', 'apartments', 'house', 'static_caravan', 'detached')"`
+
+## Data
+
+Night Lights Data: NASA Level-1 and Atmosphere Archive and Distribution System (LAADS) DAAC. (2019). VIIRS/NPP Daily Gridded Day Night Band 500m Linear Lat Lon Grid Night (Collection 1) [Data set]. Goddard Space Flight Center. https://doi.org/10.5067/VIIRS/VNP46A1.001
+
+Roads and Houses Data: OpenStreetMap contributors. (2021). Texas OpenStreetMap - roads and buildings [Data set]. Geofabrik. https://download.geofabrik.de/north-america/us/texas.html
+
+## References
+
+[EDS223](https://eds-223-geospatial.github.io/) - [UCSB MEDS 2027](https://bren.ucsb.edu/masters-programs/master-environmental-data-science)
