@@ -47,9 +47,11 @@ vnp_16_1 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2
 vnp_16_2 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021047.h08v06.001.2021048091105.tif'))
 
 # Load roads vector
+# Use SQL query to only get rows where fclass = 'motorway'
 roads <- sf::st_read(here('texas_storm_crisis', 'data', 'gis_osm_roads_free_1.gpkg'), query = "SELECT * FROM gis_osm_roads_free_1 WHERE fclass='motorway'")
 
 # Load buildings vector
+# Use SQL query to only get rows for residential buildings
 builds <- sf::st_read(here('texas_storm_crisis', 'data', 'gis_osm_buildings_a_free_1.gpkg'), query = "SELECT *
 FROM gis_osm_buildings_a_free_1
 WHERE (type IS NULL AND name IS NULL)
@@ -183,7 +185,8 @@ motorway_buff <- roads |>
 ```{r}
 #| warning: false
 
-# Find geometries in the houston mask that do not intersect with motorway_buff (see Week 3 Lab)
+# Find geometries in houston_mask that do not intersect with motorway_buff
+# st_difference - see Week 3 Lab
 blackout_mask <- st_difference(houston_mask_v, motorway_buff)
 ```
 
@@ -192,14 +195,27 @@ blackout_mask <- st_difference(houston_mask_v, motorway_buff)
 - identify homes that overlap with areas that experienced blackouts
 
 ```{r}
-
+# Warning - confirm builds and blackout_mask match before proceeding
+print("Checking that blackout_mask and builds vectors match CRS...")
+if (!(st_crs(blackout_mask) == st_crs(builds))){
+    # CRS match - false
+    warning("CRS do NOT match! Reprojecting builds to match EPSG:3083...")
+    builds <- st_transform(builds, crs = st_crs(blackout_mask))
+    print("CRS reprojection complete.")
+}
+print("CRS do match!")
 ```
 
-Tip: The buildings geopackage includes data on many types of buildings. As with the roads data, we can avoid reading in data we don’t need. Below is a SQL query that can be used as an argument in st_read:
-`"SELECT *
-FROM gis_osm_buildings_a_free_1`
-WHERE (type IS NULL AND name IS NULL)`
-OR type in ('residential', 'apartments', 'house', 'static_caravan', 'detached')"`
+```{r}
+#| warning: false
+
+# Find geometries in builds (residential polygons) that do intersect with blackout_mask
+# st_filter, default = st_intersects - see Week 3 Lab
+blackout_homes <- st_filter(builds, blackout_mask)
+
+# Count number of residences (rows) impacted
+num_blackout_homes <- nrow(blackout_homes)
+```
 
 ## Data
 
