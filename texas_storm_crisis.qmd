@@ -19,9 +19,55 @@ Tip: For improved computational efficiency and easier interoperability with sf, 
 
 Tip: Make sure to check that these datasets have the same coordinate reference systems! If not, transform them to match.
 
+```{r}
+library(terra) # raster handling
+library(tidyverse)
+library(tmap) # map making
+library(here)
+library(sf)
+library(stars)
+# library(spData) # spatial data
+# library(spDataLarge) # spatial data
+# library(geodata) # spatial data
+
+# Set warnings to display as they occur
+options(warn = 1)
+
+# Set ggplot theme
+set_theme(theme_bw())
+```
+
+```{r}
+# Load night lights rasters - 2/7/2021
+vnp_07_1 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021038.h08v05.001.2021039064328.tif'))
+vnp_07_2 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021038.h08v06.001.2021039064329.tif'))
+
+# Load night lights rasters - 2/16/2021
+vnp_16_1 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021038.h08v05.001.2021039064328.tif'))
+vnp_16_2 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021038.h08v06.001.2021039064329.tif'))
+
+# Load roads vector
+roads <- sf::st_read(here('texas_storm_crisis', 'data', 'gis_osm_roads_free_1.gpkg'), query = "SELECT * FROM gis_osm_roads_free_1 WHERE fclass='motorway'")
+
+# Load buildings vector
+builds <- sf::st_read(here('texas_storm_crisis', 'data', 'gis_osm_buildings_a_free_1.gpkg'), query = "SELECT *
+FROM gis_osm_buildings_a_free_1
+WHERE (type IS NULL AND name IS NULL)
+OR type in ('residential', 'apartments', 'house', 'static_caravan', 'detached')")
+
+```
+
 ## Data Merging
 
 As mentioned above, Houston lies on the border of two tiles. You will need to combine these two tiles together to get one raster for each date (2021-02-07 and 2021-02-16). You can merge rasters using the method discussed in Lab 4, or, if you plan to use the stars package, you can combine them using st_mosaic.
+
+```{r}
+# Merge VNP 2/7 rasters
+vnp_07_merged <- st_mosaic(vnp_07_1, vnp_07_2)
+
+# Merge VNP 2/16 rasters
+vnp_16_merged <- st_mosaic(vnp_16_1, vnp_16_2)
+```
 
 ## Create blackout mask
 
@@ -29,13 +75,81 @@ To identify places that experienced a blackout, you should create a “mask” t
 
 - find the change in night lights intensity (presumably) caused by the storm
     - hint: this will require creating a raster object for each day (2021-02-07 and 2021-02-16)
+
+```{r}
+# Warning - confirm VNP rasters match before proceeding
+# Note: compare crs, resolution, and extent for operations
+print("Checking that VNP rasters match in CRS, resolution, and extent...")
+if (st_crs(vnp_07_merged)$epsg == st_crs(vnp_16_merged)$epsg){
+    # CRS match - true
+    print("VNP CRS do match!")
+    if (all(st_res(vnp_07_merged) == st_res(vnp_16_merged))){
+        # Resolution match - true
+        print("VNP Resolutions do match!")
+        if (all(st_bbox(vnp_07_merged) == st_bbox(vnp_16_merged))) {
+            # Extent match - true
+            print("VNP Extents do match!")
+            print("Success - VNP rasters match in all required characteristics for operations.")
+        } else {
+            # Extent match - false
+            stop("VNP Extents do NOT match!")
+        }
+    } else {
+        # Resolution match - false
+        stop("VNP Resolutions do NOT match!")
+    }
+} else {
+    # CRS match - false
+    stop("VNP CRS do NOT match!")
+}
+```
+
+```{r}
+# Create mask raster w/ the change (difference) in night light intensity
+vnp_mask <- vnp_07_merged - vnp_16_merged
+```
+
 - reclassify the difference raster, assuming that any location that experienced a drop of more than 200 nW cm-2sr-1 experienced a blackout
 - assign NA to all locations that experienced a drop of less than 200 nW cm-2sr-1 change
+
+```{r}
+# Reclassify using stars::cut()
+vnp_rcl <- cut(vnp_mask,
+  breaks = c(-Inf, 200, Inf),
+  labels = c("OK", "BLACKOUT"))
+
+# Assign NA to cells with a diff <= 200 nW cm-2sr-1
+vnp_rcl[vnp_rcl == "OK"] <- NA
+```
+
 - vectorize the blackout mask
     - hint: use st_as_sf() to convert from a raster to a vector and fix any invalid geometries with st_make_valid()
+
+```{r}
+vnp_rcl_v <- vnp_rcl |> 
+    # Convert raster to vector
+    st_as_sf() |> 
+    # Fix invalid geometries
+    st_make_valid()
+```
+
 - crop (spatially subset) the blackout mask to the Houston area as defined by the following coordinates:
     - (-96.5, 29), (-96.5, 30.5), (-94.5, 30.5), (-94.5, 29)
 - re-project the cropped blackout dataset to EPSG:3083 (NAD83 / Texas Centric Albers Equal Area)
+
+```{r}
+#| warning: false
+
+# Create bbox for houston based on above coords
+houston_bbox <- st_bbox(
+    c(xmin = -96.5, ymin = 29, xmax = -94.5, ymax = 30.5),
+    crs = st_crs(vnp_rcl_v))
+
+# Crop vnp_rcl vector data to houston bbox
+houston_mask_v <- st_crop(vnp_rcl_v, houston_bbox) |> 
+    # Reproject to projected 2D crs EPSG:3083 (NAD83 / Texas Centric Albers Equal Area)
+    st_transform(crs = "EPSG:3083")
+```
 
 ## Exclude highways from the cropped blackout mask
 
