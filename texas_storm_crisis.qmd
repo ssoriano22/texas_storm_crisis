@@ -215,7 +215,65 @@ blackout_homes <- st_filter(builds, blackout_mask)
 
 # Count number of residences (rows) impacted
 num_blackout_homes <- nrow(blackout_homes)
+
+# Confirm no duplicates:
+# Number of unique IDs equals number of rows, should return TRUE
+length(unique(blackout_homes$osm_id)) == nrow(blackout_homes)
 ```
+
+## Generate Figures
+
+```{r}
+#| fig-width: 11
+#| fig-height: 5
+
+# Figure 1: a set of maps comparing night light intensities before and after the first two storms
+
+# Crop merged vnp rasters to houston using above bbox
+houston_07 <- st_crop(vnp_07_merged, houston_bbox)
+houston_16 <- st_crop(vnp_16_merged, houston_bbox)
+
+# Apply gamma correction in new rasters - 0.25 for VIIRS images
+houston_07_gamma <- houston_07^0.25
+houston_16_gamma <- houston_16^0.25
+
+# Find min and max limits for both gamma rasters to use tm_scale_continuous below
+# Note: [[1]] are needed to access pixel matrix within stars objects
+min_lim = min(c(houston_07_gamma[[1]], houston_16_gamma[[1]]), na.rm = TRUE)
+max_lim = max(c(houston_07_gamma[[1]], houston_16_gamma[[1]]), na.rm = TRUE)
+
+# Create 07 Houston night lights map
+houston_07_map <- tm_shape(houston_07_gamma) +
+  tm_raster(col.legend = tm_legend(show = FALSE),
+            col.scale = tm_scale_continuous(
+                values = "inferno",
+                limits = c(min_lim,max_lim)
+            )) +
+  tm_compass(position = c("right", "top"), text.color = "white") +
+  tm_scalebar(position = c("left", "bottom"), text.color = "white") +
+  tm_title(text = "Houston Night Lights: Pre-Storm, February 7, 2021") +
+  tm_layout(asp = 0)
+
+# Create 16 Houston night lights map
+houston_16_map <- tm_shape(houston_16_gamma ) +
+  tm_raster(col.legend = tm_legend(title = "Radiance^0.25\n(nW cm-2sr-1)",
+                                   position = tm_pos_out("right", "center")),
+            col.scale = tm_scale_continuous(
+                values = "inferno",
+                limits = c(min_lim,max_lim)
+            )) +
+  tm_compass(position = c("right", "top"), text.color = "white") +
+  tm_scalebar(position = c("left", "bottom"), text.color = "white") +
+  tm_title(text = "Houston Night Lights: Post-Storm, February 16, 2021") +
+  tm_layout(asp = 0)
+
+# Arrange maps as one figure
+tmap_arrange(houston_07_map, houston_16_map, ncol = 2, widths = c(0.44, 0.56)) 
+```
+
+## Reflection
+
+
 
 ## Data
 
