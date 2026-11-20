@@ -43,8 +43,8 @@ vnp_07_1 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2
 vnp_07_2 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021038.h08v06.001.2021039064329.tif'))
 
 # Load night lights rasters - 2/16/2021
-vnp_16_1 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021038.h08v05.001.2021039064328.tif'))
-vnp_16_2 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021038.h08v06.001.2021039064329.tif'))
+vnp_16_1 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021047.h08v05.001.2021048091106.tif'))
+vnp_16_2 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021047.h08v06.001.2021048091105.tif'))
 
 # Load roads vector
 roads <- sf::st_read(here('texas_storm_crisis', 'data', 'gis_osm_roads_free_1.gpkg'), query = "SELECT * FROM gis_osm_roads_free_1 WHERE fclass='motorway'")
@@ -124,7 +124,6 @@ vnp_rcl[vnp_rcl == "OK"] <- NA
 
 - vectorize the blackout mask
     - hint: use st_as_sf() to convert from a raster to a vector and fix any invalid geometries with st_make_valid()
-
 ```{r}
 vnp_rcl_v <- vnp_rcl |> 
     # Convert raster to vector
@@ -157,14 +156,44 @@ Highways may have experienced changes in their night light intensities that are 
 
 - identify areas within 200m of all highways
     - hint: you may need to use st_union
+
+```{r}
+# Warning - confirm roads and houston_mask_v match before proceeding
+print("Checking that houston_mask and roads vectors match CRS...")
+if (!(st_crs(houston_mask_v) == st_crs(roads))){
+    # CRS match - false
+    warning("CRS do NOT match! Reprojecting roads to match EPSG:3083...")
+    roads <- st_transform(roads, crs = st_crs(houston_mask_v))
+    print("CRS reprojection complete.")
+}
+print("CRS do match!")
+```
+
+```{r}
+# Create 200m buffer around motorways in roads vector
+motorway_buff <- roads |> 
+    # Create the buffers
+    st_buffer(dist = 200) |> 
+    # Consolidate road and buffer geometries into one polygon to handle overlapping buffers
+    st_union()
+```
+
 - find areas that experienced blackouts that are further than 200m from a highway
 
-Tip: The roads geopackage includes data on roads other than highways. However, we can avoid reading in data we don’t need by taking advantage of st_read’s ability to subset using a SQL query. Below is a SQL query that can be used as an argument in st_read:
-`"SELECT * FROM gis_osm_roads_free_1 WHERE fclass='motorway'"`
+```{r}
+#| warning: false
+
+# Find geometries in the houston mask that do not intersect with motorway_buff (see Week 3 Lab)
+blackout_mask <- st_difference(houston_mask_v, motorway_buff)
+```
 
 ## Identify the number of homes likely impacted by blackouts
 
 - identify homes that overlap with areas that experienced blackouts
+
+```{r}
+
+```
 
 Tip: The buildings geopackage includes data on many types of buildings. As with the roads data, we can avoid reading in data we don’t need. Below is a SQL query that can be used as an argument in st_read:
 `"SELECT *
