@@ -8,27 +8,17 @@ format: pdf
 
 ## Setup
 
-To complete complete the tasks of this assignment, you will need to break your analysis into the following key steps:
-
-1. find locations that experienced a blackout by creating a mask
-2. exclude highways from analysis
-3. identify homes that experienced blackouts by combining the locations of homes and blackouts
-4. Below is guidance and suggestions for each of these steps.
-
-Tip: For improved computational efficiency and easier interoperability with sf, I recommend using the stars package for raster handling.
-
-Tip: Make sure to check that these datasets have the same coordinate reference systems! If not, transform them to match.
-
 ```{r}
-library(terra) # raster handling
+#| warning: FALSE
+#| message: FALSE
+
+# Load packages
+library(terra)
 library(tidyverse)
-library(tmap) # map making
+library(tmap)
 library(here)
 library(sf)
 library(stars)
-# library(spData) # spatial data
-# library(spDataLarge) # spatial data
-# library(geodata) # spatial data
 
 # Set warnings to display as they occur
 options(warn = 1)
@@ -38,32 +28,33 @@ set_theme(theme_bw())
 ```
 
 ```{r}
+#| warning: FALSE
+
 # Load night lights rasters - 2/7/2021
-vnp_07_1 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021038.h08v05.001.2021039064328.tif'))
-vnp_07_2 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021038.h08v06.001.2021039064329.tif'))
+vnp_07_1 <- read_stars(here('data', 'VNP46A1', 'VNP46A1.A2021038.h08v05.001.2021039064328.tif'))
+vnp_07_2 <- read_stars(here('data', 'VNP46A1', 'VNP46A1.A2021038.h08v06.001.2021039064329.tif'))
 
 # Load night lights rasters - 2/16/2021
-vnp_16_1 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021047.h08v05.001.2021048091106.tif'))
-vnp_16_2 <- read_stars(here('texas_storm_crisis', 'data', 'VNP46A1', 'VNP46A1.A2021047.h08v06.001.2021048091105.tif'))
+vnp_16_1 <- read_stars(here('data', 'VNP46A1', 'VNP46A1.A2021047.h08v05.001.2021048091106.tif'))
+vnp_16_2 <- read_stars(here('data', 'VNP46A1', 'VNP46A1.A2021047.h08v06.001.2021048091105.tif'))
 
 # Load roads vector
 # Use SQL query to only get rows where fclass = 'motorway'
-roads <- sf::st_read(here('texas_storm_crisis', 'data', 'gis_osm_roads_free_1.gpkg'), query = "SELECT * FROM gis_osm_roads_free_1 WHERE fclass='motorway'")
+roads <- sf::st_read(here('data', 'gis_osm_roads_free_1.gpkg'), query = "SELECT * FROM gis_osm_roads_free_1 WHERE fclass='motorway'")
 
 # Load buildings vector
 # Use SQL query to only get rows for residential buildings
-builds <- sf::st_read(here('texas_storm_crisis', 'data', 'gis_osm_buildings_a_free_1.gpkg'), query = "SELECT *
+builds <- sf::st_read(here('data', 'gis_osm_buildings_a_free_1.gpkg'), query = "SELECT *
 FROM gis_osm_buildings_a_free_1
 WHERE (type IS NULL AND name IS NULL)
 OR type in ('residential', 'apartments', 'house', 'static_caravan', 'detached')")
-
 ```
 
 ## Data Merging
 
-As mentioned above, Houston lies on the border of two tiles. You will need to combine these two tiles together to get one raster for each date (2021-02-07 and 2021-02-16). You can merge rasters using the method discussed in Lab 4, or, if you plan to use the stars package, you can combine them using st_mosaic.
-
 ```{r}
+#| warning: FALSE
+
 # Merge VNP 2/7 rasters
 vnp_07_merged <- st_mosaic(vnp_07_1, vnp_07_2)
 
@@ -72,11 +63,6 @@ vnp_16_merged <- st_mosaic(vnp_16_1, vnp_16_2)
 ```
 
 ## Create blackout mask
-
-To identify places that experienced a blackout, you should create a “mask” that indicates for each cell whether or not it experienced a blackout.
-
-- find the change in night lights intensity (presumably) caused by the storm
-    - hint: this will require creating a raster object for each day (2021-02-07 and 2021-02-16)
 
 ```{r}
 # Warning - confirm VNP rasters match before proceeding
@@ -107,14 +93,15 @@ if (st_crs(vnp_07_merged)$epsg == st_crs(vnp_16_merged)$epsg){
 ```
 
 ```{r}
+#| warning: FALSE
+
 # Create mask raster w/ the change (difference) in night light intensity
 vnp_mask <- vnp_07_merged - vnp_16_merged
 ```
 
-- reclassify the difference raster, assuming that any location that experienced a drop of more than 200 nW cm-2sr-1 experienced a blackout
-- assign NA to all locations that experienced a drop of less than 200 nW cm-2sr-1 change
-
 ```{r}
+#| warning: FALSE
+
 # Reclassify using stars::cut()
 vnp_rcl <- cut(vnp_mask,
   breaks = c(-Inf, 200, Inf),
@@ -124,19 +111,15 @@ vnp_rcl <- cut(vnp_mask,
 vnp_rcl[vnp_rcl == "OK"] <- NA
 ```
 
-- vectorize the blackout mask
-    - hint: use st_as_sf() to convert from a raster to a vector and fix any invalid geometries with st_make_valid()
 ```{r}
+#| warning: FALSE
+
 vnp_rcl_v <- vnp_rcl |> 
     # Convert raster to vector
     st_as_sf() |> 
     # Fix invalid geometries
     st_make_valid()
 ```
-
-- crop (spatially subset) the blackout mask to the Houston area as defined by the following coordinates:
-    - (-96.5, 29), (-96.5, 30.5), (-94.5, 30.5), (-94.5, 29)
-- re-project the cropped blackout dataset to EPSG:3083 (NAD83 / Texas Centric Albers Equal Area)
 
 ```{r}
 #| warning: false
@@ -154,11 +137,6 @@ houston_mask_v <- st_crop(vnp_rcl_v, houston_bbox) |>
 
 ## Exclude highways from the cropped blackout mask
 
-Highways may have experienced changes in their night light intensities that are unrelated to the storm. Therefore, you should excluded any locations within 200 meters of all highways in the Houston area.
-
-- identify areas within 200m of all highways
-    - hint: you may need to use st_union
-
 ```{r}
 # Warning - confirm roads and houston_mask_v match before proceeding
 print("Checking that houston_mask and roads vectors match CRS...")
@@ -172,6 +150,8 @@ print("CRS do match!")
 ```
 
 ```{r}
+#| warning: FALSE
+
 # Create 200m buffer around motorways in roads vector
 motorway_buff <- roads |> 
     # Create the buffers
@@ -179,8 +159,6 @@ motorway_buff <- roads |>
     # Consolidate road and buffer geometries into one polygon to handle overlapping buffers
     st_union()
 ```
-
-- find areas that experienced blackouts that are further than 200m from a highway
 
 ```{r}
 #| warning: false
@@ -191,8 +169,6 @@ blackout_mask <- st_difference(houston_mask_v, motorway_buff)
 ```
 
 ## Identify the number of homes likely impacted by blackouts
-
-- identify homes that overlap with areas that experienced blackouts
 
 ```{r}
 # Warning - confirm builds and blackout_mask match before proceeding
@@ -224,10 +200,11 @@ length(unique(blackout_homes$osm_id)) == nrow(blackout_homes)
 ## Generate Figures
 
 ```{r}
+#| warning: FALSE
 #| fig-width: 11
 #| fig-height: 5
 
-# Figure 1: a set of maps comparing night light intensities before and after the first two storms
+# Figure 1: Two maps comparing night light intensities before and after storms
 
 # Crop merged vnp rasters to houston using above bbox
 houston_07 <- st_crop(vnp_07_merged, houston_bbox)
@@ -244,42 +221,108 @@ max_lim = max(c(houston_07_gamma[[1]], houston_16_gamma[[1]]), na.rm = TRUE)
 
 # Create 07 Houston night lights map
 houston_07_map <- tm_shape(houston_07_gamma) +
-  tm_raster(col.legend = tm_legend(show = FALSE),
+  tm_raster(col.legend = tm_legend(show = FALSE), #Hide this legend
+            # Change to continuous radiance scale
             col.scale = tm_scale_continuous(
+                # Change color scheme
                 values = "inferno",
+                # Set min and max gamma radiance values
                 limits = c(min_lim,max_lim)
             )) +
-  tm_compass(position = c("right", "top"), text.color = "white") +
+  # Add compass
+  tm_compass(position = c("left", "bottom"), text.color = "white") +
+  # Add scalebar
   tm_scalebar(position = c("left", "bottom"), text.color = "white") +
-  tm_title(text = "Houston Night Lights: Pre-Storm, February 7, 2021") +
+  # Add title
+  tm_title(text = "Houston Night Lights: Pre-Storm - February 7, 2021   ",
+           size = 1.8) +
+  # Set asp = 0 for PDF display
   tm_layout(asp = 0)
 
 # Create 16 Houston night lights map
 houston_16_map <- tm_shape(houston_16_gamma ) +
   tm_raster(col.legend = tm_legend(title = "Radiance^0.25\n(nW cm-2sr-1)",
                                    position = tm_pos_out("right", "center")),
+            # Change to continuous radiance scale
             col.scale = tm_scale_continuous(
+                # Change color scheme
                 values = "inferno",
+                # Set min and max gamma radiance values
                 limits = c(min_lim,max_lim)
             )) +
-  tm_compass(position = c("right", "top"), text.color = "white") +
+  # Add compass
+  tm_compass(position = c("left", "bottom"), text.color = "white") +
+  # Add scalebar
   tm_scalebar(position = c("left", "bottom"), text.color = "white") +
-  tm_title(text = "Houston Night Lights: Post-Storm, February 16, 2021") +
+  # Add title
+  tm_title(text = "Houston Night Lights: Post-Storm - February 16, 2021",
+           size = 1.8) +
+  # Set asp = 0 for PDF display
   tm_layout(asp = 0)
 
 # Arrange maps as one figure
 tmap_arrange(houston_07_map, houston_16_map, ncol = 2, widths = c(0.44, 0.56)) 
 ```
+**Figure 1:** VIIRS (Visible Infrared Imaging Radiometer Suite) NASA Earth satellite images of Houston, Texas night lights comparing pre-storm February 07, 2021 light radiance to post-storm February 16, 2021 light radiance. Pixel data is gamma corrected for display (radiance^0.25).
+
+```{r}
+#| warning: FALSE
+#| fig-width: 12
+#| fig-height: 9
+
+# Figure 2: Map of homes in Houston that lost power
+
+blackout_map <- tm_basemap(server = "OpenStreetMap") +
+    # Add blackout_homes on top of basemap as polygons
+    tm_shape(blackout_homes) +
+        tm_polygons(fill = "#3b0390", # Set fill color
+                    fill_alpha = 0.5, # Set fill transparency
+                    col = "#3b0390") + # Set border color
+    # Add a legend
+    tm_add_legend(
+        # Set type of tmap objects
+        type = "polygons",
+        # Set polygons labels
+        labels = c("Blackout-Affected Homes"),
+        # Set polygon fill colors
+        fill = c("#3b0390"),
+        # Set polygon border colors
+        col = c("#3b0390"),
+        # Set legned title
+        title = "Features:",
+        # Set legend position
+        position = tm_pos_out("right","center"),
+        # Increase text size
+        text.size = 1.1,
+        # Increase title size
+        title.size = 1.1
+    ) +
+    # Add compass
+    tm_compass(position = c("left", "bottom")) +
+    # Add scalebar
+    tm_scalebar(position = c("left", "bottom")) +
+    # Add title
+    tm_title("Houston Storm 2021: Blackout-Affected Homes") +
+    # Set asp = 0 for PDF display
+    tm_layout(asp = 0,
+              # Adjust outer margin space in PDF
+              outer.margins = c(0.1,0.1,0.1,0.1))
+
+blackout_map
+```
+**Figure 2:** Map of Houston, Texas showing homes that experienced a blackout during the February 2021 storms (purple polygons), as detected by difference in night light radiance (>200 nW cm-2sr-1) in the comparison of pre-and post-storm VIIRS satellite imagery. Homes within 200m of motorways were excluded, as motorway radiance interferes with accurate blackout conclusions for those homes. OpenStreetMap is used as the basemap in this image to note motorway locations.
 
 ## Reflection
 
-
+The storms in Houston, Texas between February 7 and 16, 2021 appear to have inflicted blackout conditions on many neighborhoods in the city. Comparing VIIRS night lights radiance imagery between the two dates above shows several areas in southern, northwest, and northeast Houston that were experiencing blackouts on February 16 (Figure 1). Also apparent are five locations of very high radiance in the later image - possibly due to flares captured by the satellite from oil and chemical factories in emergency mode (Wikipedia, 2021). In Figure 2, the difference in pre- and post-storm night light radiance was used to detect residences that were affected by power blackouts. Residences that were 1) over 200m from a motorway and 2) observed to have a greater than 200 nW cm-2sr-1 radiance difference were classified as having experienced a blackout - this count totalled 157,408 residential properties. Homes within 200m from a motorway were excluded, as motorway radiance could not be separated from residence radiance by VIIRS satellite. It should also be noted that this analysis relied on VIIRS satellite data from two moments in time on different days - more blackouts could have occured in Houston at different times that were not captured in this data.
 
 ## Data
 
 Night Lights Data: NASA Level-1 and Atmosphere Archive and Distribution System (LAADS) DAAC. (2019). VIIRS/NPP Daily Gridded Day Night Band 500m Linear Lat Lon Grid Night (Collection 1) [Data set]. Goddard Space Flight Center. https://doi.org/10.5067/VIIRS/VNP46A1.001
 
 Roads and Houses Data: OpenStreetMap contributors. (2021). Texas OpenStreetMap - roads and buildings [Data set]. Geofabrik. https://download.geofabrik.de/north-america/us/texas.html
+
+2021 Texas power crisis. (2021, October 2). In Wikipedia. Retrieved November 20, 2026, from https://en.wikipedia.org/wiki/2021_Texas_power_crisis
 
 ## References
 
